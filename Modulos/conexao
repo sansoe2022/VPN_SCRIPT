@@ -82,7 +82,12 @@ SCOLOR='\033[0m'
 						apt-get purge squid -y >/dev/null 2>&1
 						rm -rf /etc/squid >/dev/null 2>&1
 					}
-					apt autoremove -y >/dev/null 2>&1
+					[[ -d "/etc/squid3" ]] && {
+						apt-get remove squid3 -y >/dev/null 2>&1
+						apt-get purge squid3 -y >/dev/null 2>&1
+						rm -rf /etc/squid3 >/dev/null 2>&1
+						apt autoremove -y >/dev/null 2>&1
+					}
 				}
 				fun_bar 'rem_sqd'
 				echo -e "\n\033[1;32mSQUID REMOVIDO COM SUCESSO !\033[0m"
@@ -120,10 +125,38 @@ SCOLOR='\033[0m'
 			for porta in $(echo -e $portass); do
 				verif_ptrs $porta
 			done
-			echo -e "\n\033[1;32mINSTALANDO SQUID PROXY\033[0m\n"
-			fun_bar 'apt update -y' "apt install squid -y"
-			var_sqd="/etc/squid/squid.conf"
-			var_pay="/etc/squid/payload.txt"
+			[[ $(grep -wc '14' /etc/issue.net) != '0' ]] || [[ $(grep -wc '8' /etc/issue.net) != '0' ]] && {
+				echo -e "\n\033[1;32mINSTALANDO SQUID PROXY\033[0m\n"
+				fun_bar 'apt update -y' "apt install squid3 -y"
+			} || {
+				echo -e "\n\033[1;31m[\033[1;36m1\033[1;31m] \033[1;37m• \033[1;33mSQUID VERSAO 3.3.X\n\033[1;31m[\033[1;36m2\033[1;31m] \033[1;37m• \033[1;33mSQUID VERSAO 3.5.X\033[0m\n"
+				read -p "$(echo -e "\033[1;32mINFORME UMA OPÇÃO \033[1;37m: ")" -e -i 1 opc
+				[[ -z "$opc" ]] && {
+					echo -e "\n\033[1;31mOpcao invalida!"
+					sleep 2
+					fun_conexao
+				}
+				[[ "$opc" != '1' ]] && {
+					[[ "$opc" != '2' ]] && {
+						echo -e "\n\033[1;31mOpcao invalida !"
+						sleep 2
+						fun_conexao
+					}
+				}
+				echo -e "\n\033[1;32mINSTALANDO SQUID PROXY\033[0m\n"
+				fun_bar 'apt update -y' "instsqd $opc"
+			}
+			if [[ -d "/etc/squid/" ]]; then
+				var_sqd="/etc/squid/squid.conf"
+				var_pay="/etc/squid/payload.txt"
+			elif [[ -d "/etc/squid3/" ]]; then
+				var_sqd="/etc/squid3/squid.conf"
+				var_pay="/etc/squid3/payload.txt"
+			else
+				echo -e "\n\033[1;33m[\033[1;31mERRO\033[1;33m]\033[1;37m: \033[1;33mO SQUID PROXY CORROMPEU\033[0m"
+				sleep 2
+				fun_conexao
+			fi
 			cat <<-EOF >$var_pay
 				.whatsapp.net/
 				.facebook.net/
@@ -159,8 +192,16 @@ SCOLOR='\033[0m'
 				pipeline_prefetch off
 			EOF
 			sqd_conf() {
-				service ssh restart
-				service squid restart
+				[[ -d "/etc/squid/" ]] && {
+					service ssh restart
+					/etc/init.d/squid restart
+					service squid restart
+				}
+				[[ -d "/etc/squid3/" ]] && {
+					service ssh restart
+					/etc/init.d/squid3 restart
+					service squid3 restart
+				}
 			}
 			echo -e "\n\033[1;32mCONFIGURANDO SQUID PROXY\033[0m"
 			echo ""
@@ -174,7 +215,17 @@ SCOLOR='\033[0m'
 	addpt_sqd() {
 		echo -e "\E[44;1;37m         ADICIONAR PORTA AO SQUID         \E[0m"
 		echo -e "\n\033[1;33mPORTAS EM USO: \033[1;32m$sqdp\n"
-		var_sqd="/etc/squid/squid.conf"
+		if [[ -f "/etc/squid/squid.conf" ]]; then
+			var_sqd="/etc/squid/squid.conf"
+		elif [[ -f "/etc/squid3/squid.conf" ]]; then
+			var_sqd="/etc/squid3/squid.conf"
+		else
+			echo -e "\n\033[1;31mSQUID NAO ESTA INSTALADO!\033[0m"
+			echo -e "\n\033[1;31mRetornando...\033[0m"
+			sleep 2
+			clear
+			fun_squid
+		fi
 		echo -ne "\033[1;32mQUAL PORTA DESEJA ADICIONAR \033[1;33m?\033[1;37m "
 		read pt
 		[[ -z "$pt" ]] && {
@@ -190,7 +241,7 @@ SCOLOR='\033[0m'
 		fun_bar 'sleep 2'
 		echo -e "\n\033[1;32mREINICIANDO O SQUID!"
 		echo ""
-		fun_bar 'service squid restart'
+		fun_bar 'service squid restart' 'service squid3 restart'
 		echo -e "\n\033[1;32mPORTA ADICIONADA COM SUCESSO!"
 		sleep 3
 		clear
@@ -200,7 +251,17 @@ SCOLOR='\033[0m'
 	rempt_sqd() {
 		echo -e "\E[41;1;37m        REMOVER PORTA DO SQUID        \E[0m"
 		echo -e "\n\033[1;33mPORTAS EM USO: \033[1;32m$sqdp\n"
-		var_sqd="/etc/squid/squid.conf"
+		if [[ -f "/etc/squid/squid.conf" ]]; then
+			var_sqd="/etc/squid/squid.conf"
+		elif [[ -f "/etc/squid3/squid.conf" ]]; then
+			var_sqd="/etc/squid3/squid.conf"
+		else
+			echo -e "\n\033[1;31mSQUID NAO ESTA INSTALADO!\033[0m"
+			echo -e "\n\033[1;31mRetornando...\033[0m"
+			sleep 2
+			clear
+			fun_squid
+		fi
 		echo -ne "\033[1;32mQUAL PORTA DESEJA REMOVER \033[1;33m?\033[1;37m "
 		read pt
 		[[ -z "$pt" ]] && {
@@ -216,7 +277,7 @@ SCOLOR='\033[0m'
 			fun_bar 'sleep 3'
 			echo -e "\n\033[1;32mREINICIANDO O SQUID!"
 			echo ""
-			fun_bar 'service squid restart'
+			fun_bar 'service squid restart' 'service squid3 restart'
 			echo -e "\n\033[1;32mPORTA REMOVIDA COM SUCESSO!"
 			sleep 3.5s
 			clear
@@ -1307,8 +1368,8 @@ ifconfig-pool-persist ipp.txt" >/etc/openvpn/server.conf
 				esac
 				echo "keepalive 10 120
 float
-compress lzo
 cipher AES-256-CBC
+comp-lzo yes
 user nobody
 group $GROUPNAME
 persist-key
@@ -1367,7 +1428,6 @@ exit 0' >$RCLOCAL
 				[[ "$OS" = 'debian' ]] && {
 					if pgrep systemd-journal; then
 						systemctl restart openvpn@server.service
-						systemctl enable openvpn@server.service
 					else
 						/etc/init.d/openvpn restart
 					fi
@@ -1403,7 +1463,7 @@ exit 0' >$RCLOCAL
 				persist-tun
 				remote-cert-tls server
 				cipher AES-256-CBC
-				compress lzo
+				comp-lzo yes
 				setenv opt block-outside-dns
 				key-direction 1
 				verb 3
@@ -1489,12 +1549,12 @@ exit 0' >$RCLOCAL
 				verif_ptrs $porta
 				fun_inisocks() {
 					sleep 1
-					screen -dmS proxy python3 /etc/SSHPlus/proxy.py $porta
+					screen -dmS proxy python /etc/SSHPlus/proxy.py $porta
 					[[ $(grep -wc "proxy.py" /etc/autostart) = '0' ]] && {
-						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'proxy' -X quit;  screen -dmS proxy python3 /etc/SSHPlus/proxy.py $porta; }" >>/etc/autostart
+						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'proxy' -X quit;  screen -dmS proxy python /etc/SSHPlus/proxy.py $porta; }" >>/etc/autostart
 					} || {
 						sed -i '/proxy.py/d' /etc/autostart
-						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'proxy' -X quit;  screen -dmS proxy python3 /etc/SSHPlus/proxy.py $porta; }" >>/etc/autostart
+						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'proxy' -X quit;  screen -dmS proxy python /etc/SSHPlus/proxy.py $porta; }" >>/etc/autostart
 					}
 				}
 				echo ""
@@ -1544,12 +1604,12 @@ exit 0' >$RCLOCAL
 				verif_ptrs $porta
 				fun_iniwssocks() {
 					sleep 1
-					screen -dmS ws python3 /etc/SSHPlus/wsproxy.py $porta
+					screen -dmS ws python /etc/SSHPlus/wsproxy.py $porta
 					[[ $(grep -wc "wsproxy.py" /etc/autostart) = '0' ]] && {
-						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'ws' -X quit;  screen -dmS ws python3 /etc/SSHPlus/wsproxy.py $porta; }" >>/etc/autostart
+						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'ws' -X quit;  screen -dmS ws python /etc/SSHPlus/wsproxy.py $porta; }" >>/etc/autostart
 					} || {
 						sed -i '/wsproxy.py/d' /etc/autostart
-						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'ws' -X quit;  screen -dmS ws python3 /etc/SSHPlus/wsproxy.py $porta; }" >>/etc/autostart
+						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'ws' -X quit;  screen -dmS ws python /etc/SSHPlus/wsproxy.py $porta; }" >>/etc/autostart
 					}
 				}
 				echo ""
@@ -1604,12 +1664,12 @@ exit 0' >$RCLOCAL
 						sed -i "s/$listoldop/$listopen/" /etc/SSHPlus/open.py
 					}
 					sleep 1
-					screen -dmS openpy python3 /etc/SSHPlus/open.py $porta
+					screen -dmS openpy python /etc/SSHPlus/open.py $porta
 					[[ $(grep -wc "open.py" /etc/autostart) = '0' ]] && {
-						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'openpy' -X quit;  screen -dmS openpy python3 /etc/SSHPlus/open.py $porta; }" >>/etc/autostart
+						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'openpy' -X quit;  screen -dmS openpy python /etc/SSHPlus/open.py $porta; }" >>/etc/autostart
 					} || {
 						sed -i '/open.py/d' /etc/autostart
-						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'openpy' -X quit;  screen -dmS openpy python3 /etc/SSHPlus/open.py $porta; }" >>/etc/autostart
+						echo -e "netstat -tlpn | grep -w $porta > /dev/null || {  screen -r -S 'openpy' -X quit;  screen -dmS openpy python /etc/SSHPlus/open.py $porta; }" >>/etc/autostart
 					}
 				}
 				echo ""
@@ -1644,7 +1704,7 @@ exit 0' >$RCLOCAL
 				echo ""
 				abrirptsks() {
 					sleep 1
-					screen -dmS proxy python3 /etc/SSHPlus/proxy.py $porta
+					screen -dmS proxy python /etc/SSHPlus/proxy.py $porta
 					sleep 1
 				}
 				fun_bar 'abrirptsks'
@@ -1735,7 +1795,7 @@ exit 0' >$RCLOCAL
 						screen -wipe >/dev/null
 						_Ptsks="$(cat /tmp/Pt_sks)"
 						sleep 1
-						screen -dmS proxy python3 /etc/SSHPlus/proxy.py $_Ptsks
+						screen -dmS proxy python /etc/SSHPlus/proxy.py $_Ptsks
 						rm /tmp/Pt_sks
 					fi
 				}
@@ -1830,7 +1890,7 @@ exit 0' >$RCLOCAL
 						screen -wipe >/dev/null
 						_Ptwssks="$(cat /tmp/Pt_wssks)"
 						sleep 1
-						screen -dmS ws python3 /etc/SSHPlus/wsproxy.py $_Ptwssks
+						screen -dmS ws python /etc/SSHPlus/wsproxy.py $_Ptwssks
 						rm /tmp/Pt_wssks
 					fi
 				}
