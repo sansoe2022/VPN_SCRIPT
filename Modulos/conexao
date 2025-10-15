@@ -820,520 +820,507 @@ SCOLOR='\033[0m'
 		fi
 	}
 
-
-
-
-
-fun_openvpn() {
-	if readlink /proc/$$/exe | grep -qs "dash"; then
-		echo "Este script precisa ser executado com bash, não sh"
-		exit 1
-	fi
-	[[ "$EUID" -ne 0 ]] && {
-		clear
-		echo "Execulte como root"
-		exit 2
-	}
-	[[ ! -e /dev/net/tun ]] && {
-		echo -e "\033[1;31mTUN TAP NAO DISPONIVEL\033[0m"
-		sleep 2
-		exit 3
-	}
-	if grep -qs "CentOS release 5" "/etc/redhat-release"; then
-		echo "O CentOS 5 é muito antigo e não é suportado"
-		exit 4
-	fi
-	if [[ -e /etc/debian_version ]]; then
-		OS=debian
-		GROUPNAME=nogroup
-		RCLOCAL='/etc/rc.local'
-	elif [[ -e /etc/centos-release || -e /etc/redhat-release ]]; then
-		OS=centos
-		GROUPNAME=nobody
-		RCLOCAL='/etc/rc.d/rc.local'
-	else
-		echo -e "SISTEMA NAO SUPORTADO"
-		exit 5
-	fi
-	newclient() {
-		# gerar client.ovpn
-		cp /etc/openvpn/client-common.txt ~/$1.ovpn
-		echo "<ca>" >>~/$1.ovpn
-		cat /etc/openvpn/easy-rsa/pki/ca.crt >>~/$1.ovpn
-		echo "</ca>" >>~/$1.ovpn
-		echo "<cert>" >>~/$1.ovpn
-		cat /etc/openvpn/easy-rsa/pki/issued/$1.crt >>~/$1.ovpn
-		echo "</cert>" >>~/$1.ovpn
-		echo "<key>" >>~/$1.ovpn
-		cat /etc/openvpn/easy-rsa/pki/private/$1.key >>~/$1.ovpn
-		echo "</key>" >>~/$1.ovpn
-		echo "<tls-auth>" >>~/$1.ovpn
-		cat /etc/openvpn/ta.key >>~/$1.ovpn
-		echo "</tls-auth>" >>~/$1.ovpn
-	}
-	IP1=$(ip addr | grep 'inet' | grep -v inet6 | grep -vE '127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | grep -o -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -1)
-	IP2=$(wget -4qO- "http://whatismyip.akamai.com/")
-	[[ "$IP1" = "" ]] && {
-		IP1=$(hostname -I | cut -d' ' -f1)
-	}
-	[[ "$IP1" != "$IP2" ]] && {
-		IP="$IP1"
-	} || {
-		IP="$IP2"
-	}
-	[[ $(netstat -nplt | grep -wc 'openvpn') != '0' ]] && {
-		while :; do
+	fun_openvpn() {
+		if readlink /proc/$$/exe | grep -qs "dash"; then
+			echo "Este script precisa ser executado com bash, não sh"
+			exit 1
+		fi
+		[[ "$EUID" -ne 0 ]] && {
 			clear
+			echo "Execulte como root"
+			exit 2
+		}
+		[[ ! -e /dev/net/tun ]] && {
+			echo -e "\033[1;31mTUN TAP NAO DISPONIVEL\033[0m"
+			sleep 2
+			exit 3
+		}
+		if grep -qs "CentOS release 5" "/etc/redhat-release"; then
+			echo "O CentOS 5 é muito antigo e não é suportado"
+			exit 4
+		fi
+		if [[ -e /etc/debian_version ]]; then
+			OS=debian
+			GROUPNAME=nogroup
+			RCLOCAL='/etc/rc.local'
+		elif [[ -e /etc/centos-release || -e /etc/redhat-release ]]; then
+			OS=centos
+			GROUPNAME=nobody
+			RCLOCAL='/etc/rc.d/rc.local'
+		else
+			echo -e "SISTEMA NAO SUPORTADO"
+			exit 5
+		fi
+		newclient() {
+			# gerar client.ovpn
+			cp /etc/openvpn/client-common.txt ~/$1.ovpn
+			echo "<ca>" >>~/$1.ovpn
+			cat /etc/openvpn/easy-rsa/pki/ca.crt >>~/$1.ovpn
+			echo "</ca>" >>~/$1.ovpn
+			echo "<cert>" >>~/$1.ovpn
+			cat /etc/openvpn/easy-rsa/pki/issued/$1.crt >>~/$1.ovpn
+			echo "</cert>" >>~/$1.ovpn
+			echo "<key>" >>~/$1.ovpn
+			cat /etc/openvpn/easy-rsa/pki/private/$1.key >>~/$1.ovpn
+			echo "</key>" >>~/$1.ovpn
+			echo "<tls-auth>" >>~/$1.ovpn
+			cat /etc/openvpn/ta.key >>~/$1.ovpn
+			echo "</tls-auth>" >>~/$1.ovpn
+		}
+		IP1=$(ip addr | grep 'inet' | grep -v inet6 | grep -vE '127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | grep -o -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -1)
+		IP2=$(wget -4qO- "http://whatismyip.akamai.com/")
+		[[ "$IP1" = "" ]] && {
+			IP1=$(hostname -I | cut -d' ' -f1)
+		}
+		[[ "$IP1" != "$IP2" ]] && {
+			IP="$IP1"
+		} || {
+			IP="$IP2"
+		}
+		[[ $(netstat -nplt | grep -wc 'openvpn') != '0' ]] && {
+			while :; do
+				clear
 
-			opnp=$(cat /etc/openvpn/server.conf | grep "port" | awk {'print $2'})
-			[[ -d /var/www/html/openvpn ]] && {
-				ovpnweb=$(echo -e "\033[1;32m◉ ")
-			} || {
-				ovpnweb=$(echo -e "\033[1;31m○ ")
-			}
-			if grep "duplicate-cn" /etc/openvpn/server.conf >/dev/null; then
-				mult=$(echo -e "\033[1;32m◉ ")
-			else
-				mult=$(echo -e "\033[1;31m○ ")
-			fi
-			echo -e "\E[44;1;37m          GERENCIAR OPENVPN           \E[0m"
-			echo ""
-			echo -e "\033[1;33mPORTA\033[1;37m: \033[1;32m$opnp"
-			echo ""
-			echo -e "\033[1;31m[\033[1;36m1\033[1;31m] \033[1;37m• \033[1;33mALTERAR PORTA"
-			echo -e "\033[1;31m[\033[1;36m2\033[1;31m] \033[1;37m• \033[1;33mREMOVER OPENVPN"
-			echo -e "\033[1;31m[\033[1;36m3\033[1;31m] \033[1;37m• \033[1;33mOVPN VIA LINK $ovpnweb"
-			echo -e "\033[1;31m[\033[1;36m4\033[1;31m] \033[1;37m• \033[1;33mMULTILOGIN OVPN $mult"
-			echo -e "\033[1;31m[\033[1;36m5\033[1;31m] \033[1;37m• \033[1;33mALTERAR HOST DNS"
-			echo -e "\033[1;31m[\033[1;36m0\033[1;31m] \033[1;37m• \033[1;33mVOLTAR"
-			echo ""
-			echo -ne "\033[1;32mOQUE DESEJA FAZER \033[1;33m?\033[1;31m?\033[1;37m "
-			read option
-			case $option in
-			1)
-				clear
-				echo -e "\E[44;1;37m         ALTERAR PORTA OPENVPN         \E[0m"
-				echo ""
-				echo -e "\033[1;33mPORTA EM USO: \033[1;32m$opnp"
-				echo ""
-				echo -ne "\033[1;32mQUAL PORTA DESEJA UTILIZAR \033[1;33m?\033[1;37m "
-				read porta
-				[[ -z "$porta" ]] && {
-					echo ""
-					echo -e "\033[1;31mPorta invalida!"
-					sleep 3
-					fun_conexao
-				}
-				verif_ptrs
-				echo ""
-				echo -e "\033[1;32mALTERANDO A PORTA OPENVPN!\033[1;33m"
-				echo ""
-				fun_opn() {
-					var_ptovpn=$(sed -n '1 p' /etc/openvpn/server.conf)
-					sed -i "s/\b$var_ptovpn\b/port $porta/g" /etc/openvpn/server.conf
-					sleep 1
-					var_ptovpn2=$(sed -n '7 p' /etc/openvpn/client-common.txt | awk {'print $NF'})
-					sed -i "s/\b$var_ptovpn2/\b$porta/g" /etc/openvpn/client-common.txt
-					sleep 1
-					systemctl restart openvpn-server@server.service
-				}
-				fun_bar 'fun_opn'
-				echo ""
-				echo -e "\033[1;32mPORTA ALTERADA COM SUCESSO!\033[1;33m"
-				sleep 2
-				fun_conexao
-				;;
-			2)
-				echo ""
-				echo -ne "\033[1;32mDESEJA REMOVER O OPENVPN \033[1;31m? \033[1;33m[s/n]:\033[1;37m "
-				read REMOVE
-				[[ "$REMOVE" = 's' ]] && {
-					rmv_open() {
-						PORT=$(grep '^port ' /etc/openvpn/server.conf | cut -d " " -f 2)
-						PROTOCOL=$(grep '^proto ' /etc/openvpn/server.conf | cut -d " " -f 2)
-						PUBLIC_INTERFACE=$(ip route list default | awk '{print $5}')
-						IP=$(grep "iptables -t nat -A POSTROUTING -s 10.8.0.0/24" $RCLOCAL | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
-						if pgrep firewalld; then
-							firewall-cmd --zone=public --remove-port=$PORT/$PROTOCOL
-							firewall-cmd --zone=trusted --remove-source=10.8.0.0/24
-							firewall-cmd --permanent --zone=public --remove-port=$PORT/$PROTOCOL
-							firewall-cmd --permanent --zone=trusted --remove-source=10.8.0.0/24
-						fi
-						if iptables -L -n | grep -qE 'REJECT|DROP|ACCEPT'; then
-							iptables -D INPUT -p $PROTOCOL --dport $PORT -j ACCEPT
-							iptables -D FORWARD -s 10.8.0.0/24 -j ACCEPT
-							iptables -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
-							sed -i "/iptables -I INPUT -p $PROTOCOL --dport $PORT -j ACCEPT/d" $RCLOCAL
-							sed -i "/iptables -I FORWARD -s 10.8.0.0\/24 -j ACCEPT/d" $RCLOCAL
-							sed -i "/iptables -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT/d" $RCLOCAL
-						fi
-						iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -j SNAT --to $IP
-						sed -i '/iptables -t nat -A POSTROUTING -s 10.8.0.0\/24 -j SNAT --to /d' $RCLOCAL
-						if hash sestatus 2>/dev/null; then
-							if sestatus | grep "Current mode" | grep -qs "enforcing"; then
-								if [[ "$PORT" != '1194' || "$PROTOCOL" = 'tcp' ]]; then
-									semanage port -d -t openvpn_port_t -p $PROTOCOL $PORT
-								fi
-							fi
-						fi
-						[[ "$OS" = 'debian' ]] && {
-							apt-get remove --purge -y openvpn openvpn-blacklist easy-rsa
-							apt-get autoremove openvpn -y
-							apt-get autoremove -y
-						} || {
-							yum remove openvpn -y
-						}
-						rm -rf /etc/openvpn
-						rm -rf /usr/share/doc/openvpn*
-					}
-					echo ""
-					echo -e "\033[1;32mREMOVENDO O OPENVPN!\033[0m"
-					echo ""
-					fun_bar 'rmv_open'
-					echo ""
-					echo -e "\033[1;32mOPENVPN REMOVIDO COM SUCESSO!\033[0m"
-					sleep 2
-					fun_conexao
-				} || {
-					echo ""
-					echo -e "\033[1;31mRetornando...\033[0m"
-					sleep 2
-					fun_conexao
-				}
-				;;
-			3)
+				opnp=$(cat /etc/openvpn/server.conf | grep "port" | awk {'print $2'})
 				[[ -d /var/www/html/openvpn ]] && {
-					clear
-					fun_spcr() {
-						apt-get remove apache2 -y
-						apt-get autoremove -y
-						rm -rf /var/www/html/openvpn
-					}
-					function aguarde() {
-						helice() {
-							fun_spcr >/dev/null 2>&1 &
-							tput civis
-							while [ -d /proc/$! ]; do
-								for i in / - \\ \|; do
-									sleep .1
-									echo -ne "\e[1D$i"
-								done
-							done
-							tput cnorm
-						}
-						echo -ne "\033[1;31mDESATIVANDO\033[1;32m.\033[1;33m.\033[1;31m. \033[1;33m"
-						helice
-						echo -e "\e[1DOk"
-					}
-					aguarde
-					sleep 2
-					fun_openvpn
+					ovpnweb=$(echo -e "\033[1;32m◉ ")
 				} || {
-					clear
-					fun_apchon() {
-						apt-get install apache2 zip -y
-						sed -i "s/Listen 80/Listen 81/g" /etc/apache2/ports.conf
-						service apache2 restart
-						[[ ! -d /var/www/html ]] && {
-							mkdir /var/www/html
-						}
-						[[ ! -d /var/www/html/openvpn ]] && {
-							mkdir /var/www/html/openvpn
-						}
-						touch /var/www/html/openvpn/index.html
-						chmod -R 755 /var/www
-						/etc/init.d/apache2 restart
-					}
-					function aguarde2() {
-						helice() {
-							fun_apchon >/dev/null 2>&1 &
-							tput civis
-							while [ -d /proc/$! ]; do
-								for i in / - \\ \|; do
-									sleep .1
-									echo -ne "\e[1D$i"
-								done
-							done
-							tput cnorm
-						}
-						echo -ne "\033[1;32mATIVANDO\033[1;32m.\033[1;33m.\033[1;31m. \033[1;33m"
-						helice
-						echo -e "\e[1DOk"
-					}
-					aguarde2
-					fun_openvpn
+					ovpnweb=$(echo -e "\033[1;31m○ ")
 				}
-				;;
-			4)
 				if grep "duplicate-cn" /etc/openvpn/server.conf >/dev/null; then
-					clear
-					fun_multon() {
-						sed -i '/duplicate-cn/d' /etc/openvpn/server.conf
-						sleep 1.5s
-						systemctl restart openvpn-server@server.service >/dev/null
-						sleep 2
-					}
-					fun_spinmult() {
-						helice() {
-							fun_multon >/dev/null 2>&1 &
-							tput civis
-							while [ -d /proc/$! ]; do
-								for i in / - \\ \|; do
-									sleep .1
-									echo -ne "\e[1D$i"
-								done
-							done
-							tput cnorm
-						}
-						echo ""
-						echo -ne "\033[1;31mBLOQUEANDO MULTILOGIN\033[1;32m.\033[1;33m.\033[1;31m. \033[1;33m"
-						helice
-						echo -e "\e[1DOk"
-					}
-					fun_spinmult
-					sleep 1
-					fun_openvpn
+					mult=$(echo -e "\033[1;32m◉ ")
 				else
-					clear
-					fun_multoff() {
-						grep -v "^duplicate-cn" /etc/openvpn/server.conf >/tmp/tmpass && mv /tmp/tmpass /etc/openvpn/server.conf
-						echo "duplicate-cn" >>/etc/openvpn/server.conf
-						sleep 1.5s
-						systemctl restart openvpn-server@server.service >/dev/null
-					}
-					fun_spinmult2() {
-						helice() {
-							fun_multoff >/dev/null 2>&1 &
-							tput civis
-							while [ -d /proc/$! ]; do
-								for i in / - \\ \|; do
-									sleep .1
-									echo -ne "\e[1D$i"
-								done
-							done
-							tput cnorm
-						}
-						echo ""
-						echo -ne "\033[1;32mPERMITINDO MULTILOGIN\033[1;32m.\033[1;33m.\033[1;31m. \033[1;33m"
-						helice
-						echo -e "\e[1DOk"
-					}
-					fun_spinmult2
-					sleep 1
-					fun_openvpn
+					mult=$(echo -e "\033[1;31m○ ")
 				fi
-				;;
-			5)
-				clear
-				echo -e "\E[44;1;37m         ALTERAR HOST DNS           \E[0m"
+				echo -e "\E[44;1;37m          GERENCIAR OPENVPN           \E[0m"
 				echo ""
-				echo -e "\033[1;31m[\033[1;36m1\033[1;31m] \033[1;37m• \033[1;33mADICIONAR HOST DNS"
-				echo -e "\033[1;31m[\033[1;36m2\033[1;31m] \033[1;37m• \033[1;33mREMOVER HOST DNS"
-				echo -e "\033[1;31m[\033[1;36m3\033[1;31m] \033[1;37m• \033[1;33mEDITAR MANUALMENTE"
+				echo -e "\033[1;33mPORTA\033[1;37m: \033[1;32m$opnp"
+				echo ""
+				echo -e "\033[1;31m[\033[1;36m1\033[1;31m] \033[1;37m• \033[1;33mALTERAR PORTA"
+				echo -e "\033[1;31m[\033[1;36m2\033[1;31m] \033[1;37m• \033[1;33mREMOVER OPENVPN"
+				echo -e "\033[1;31m[\033[1;36m3\033[1;31m] \033[1;37m• \033[1;33mOVPN VIA LINK $ovpnweb"
+				echo -e "\033[1;31m[\033[1;36m4\033[1;31m] \033[1;37m• \033[1;33mMULTILOGIN OVPN $mult"
+				echo -e "\033[1;31m[\033[1;36m5\033[1;31m] \033[1;37m• \033[1;33mALTERAR HOST DNS"
 				echo -e "\033[1;31m[\033[1;36m0\033[1;31m] \033[1;37m• \033[1;33mVOLTAR"
 				echo ""
 				echo -ne "\033[1;32mOQUE DESEJA FAZER \033[1;33m?\033[1;31m?\033[1;37m "
-				read resp
-				[[ -z "$resp" ]] && {
-					echo ""
-					echo -e "\033[1;31mOpcao invalida!"
-					sleep 3
-					fun_openvpn
-				}
-				if [[ "$resp" = '1' ]]; then
+				read option
+				case $option in
+				1)
 					clear
-					echo -e "\E[44;1;37m            Adicionar Host DNS            \E[0m"
+					echo -e "\E[44;1;37m         ALTERAR PORTA OPENVPN         \E[0m"
 					echo ""
-					echo -e "\033[1;33mLista dos hosts atuais:\033[0m "
+					echo -e "\033[1;33mPORTA EM USO: \033[1;32m$opnp"
 					echo ""
-					i=0
-					for _host in $(grep -w "127.0.0.1" /etc/hosts | grep -v "localhost" | cut -d' ' -f2); do
-						echo -e "\033[1;32m$_host"
-					done
-					echo ""
-					echo -ne "\033[1;33mDigite o host a ser adicionado\033[1;37m : "
-					read host
-					if [[ -z $host ]]; then
+					echo -ne "\033[1;32mQUAL PORTA DESEJA UTILIZAR \033[1;33m?\033[1;37m "
+					read porta
+					[[ -z "$porta" ]] && {
 						echo ""
-						echo -e "\E[41;1;37m        Campo Vazio ou invalido !       \E[0m"
-						sleep 2
-						fun_openvpn
-					fi
-					if [[ "$(grep -w "$host" /etc/hosts | wc -l)" -gt "0" ]]; then
-						echo -e "\E[41;1;37m    Esse host ja está adicionado  !    \E[0m"
-						sleep 2
-						fun_openvpn
-					fi
-					sed -i "3i\127.0.0.1 $host" /etc/hosts
+						echo -e "\033[1;31mPorta invalida!"
+						sleep 3
+						fun_conexao
+					}
+					verif_ptrs
 					echo ""
-					echo -e "\E[44;1;37m      Host adicionado com sucesso !      \E[0m"
-					sleep 2
-					fun_openvpn
-				elif [[ "$resp" = '2' ]]; then
-					clear
-					echo -e "\E[44;1;37m            Remover Host DNS            \E[0m"
+					echo -e "\033[1;32mALTERANDO A PORTA OPENVPN!\033[1;33m"
 					echo ""
-					echo -e "\033[1;33mLista dos hosts atuais:\033[0m "
+					fun_opn() {
+						var_ptovpn=$(sed -n '1 p' /etc/openvpn/server.conf)
+						sed -i "s/\b$var_ptovpn\b/port $porta/g" /etc/openvpn/server.conf
+						sleep 1
+						var_ptovpn2=$(sed -n '7 p' /etc/openvpn/client-common.txt | awk {'print $NF'})
+						sed -i "s/\b$var_ptovpn2/\b$porta/g" /etc/openvpn/client-common.txt
+						sleep 1
+						service openvpn restart
+					}
+					fun_bar 'fun_opn'
 					echo ""
-					i=0
-					for _host in $(grep -w "127.0.0.1" /etc/hosts | grep -v "localhost" | cut -d' ' -f2); do
-						i=$(expr $i + 1)
-						oP+=$i
-						[[ $i == [1-9] ]] && oP+=" 0$i" && i=0$i
-						oP+=":$_host\n"
-						echo -e "\033[1;33m[\033[1;31m$i\033[1;33m] \033[1;37m- \033[1;32m$_host\033[0m"
-					done
-					echo ""
-					echo -ne "\033[1;32mSelecione o host a ser removido \033[1;33m[\033[1;37m1\033[1;31m-\033[1;37m$i\033[1;33m]\033[1;37m: "
-					read option
-					if [[ -z $option ]]; then
-						echo ""
-						echo -e "\E[41;1;37m          Opcao invalida  !        \E[0m"
-						sleep 2
-						fun_openvpn
-					fi
-					host=$(echo -e "$oP" | grep -E "\b$option\b" | cut -d: -f2)
-					hst=$(grep -v "127.0.0.1 $host" /etc/hosts)
-					echo "$hst" >/etc/hosts
-					echo ""
-					echo -e "\E[41;1;37m      Host removido com sucesso !      \E[0m"
-					sleep 2
-					fun_openvpn
-				elif [[ "$resp" = '3' ]]; then
-					echo -e "\n\033[1;32mALTERANDO ARQUIVO \033[1;37m/etc/hosts\033[0m"
-					echo -e "\n\033[1;31mATENCAO!\033[0m"
-					echo -e "\n\033[1;33mPARA SALVAR USE AS TECLAS \033[1;32mctrl x y\033[0m"
-					sleep 4
-					clear
-					nano /etc/hosts
-					echo -e "\n\033[1;32mALTERADO COM SUCESSO!\033[0m"
-					sleep 3
-					fun_openvpn
-				elif [[ "$resp" = '0' ]]; then
-					echo ""
-					echo -e "\033[1;31mRetornando...\033[0m"
+					echo -e "\033[1;32mPORTA ALTERADA COM SUCESSO!\033[1;33m"
 					sleep 2
 					fun_conexao
-				else
+					;;
+				2)
+					echo ""
+					echo -ne "\033[1;32mDESEJA REMOVER O OPENVPN \033[1;31m? \033[1;33m[s/n]:\033[1;37m "
+					read REMOVE
+					[[ "$REMOVE" = 's' ]] && {
+						rmv_open() {
+							PORT=$(grep '^port ' /etc/openvpn/server.conf | cut -d " " -f 2)
+							PROTOCOL=$(grep '^proto ' /etc/openvpn/server.conf | cut -d " " -f 2)
+							IP=$(grep 'iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -j SNAT --to ' $RCLOCAL | cut -d " " -f 11)
+							if pgrep firewalld; then
+								firewall-cmd --zone=public --remove-port=$PORT/$PROTOCOL
+								firewall-cmd --zone=trusted --remove-source=10.8.0.0/24
+								firewall-cmd --permanent --zone=public --remove-port=$PORT/$PROTOCOL
+								firewall-cmd --permanent --zone=trusted --remove-source=10.8.0.0/24
+							fi
+							if iptables -L -n | grep -qE 'REJECT|DROP|ACCEPT'; then
+								iptables -D INPUT -p $PROTOCOL --dport $PORT -j ACCEPT
+								iptables -D FORWARD -s 10.8.0.0/24 -j ACCEPT
+								iptables -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+								sed -i "/iptables -I INPUT -p $PROTOCOL --dport $PORT -j ACCEPT/d" $RCLOCAL
+								sed -i "/iptables -I FORWARD -s 10.8.0.0\/24 -j ACCEPT/d" $RCLOCAL
+								sed -i "/iptables -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT/d" $RCLOCAL
+							fi
+							iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -j SNAT --to $IP
+							sed -i '/iptables -t nat -A POSTROUTING -s 10.8.0.0\/24 -j SNAT --to /d' $RCLOCAL
+							if hash sestatus 2>/dev/null; then
+								if sestatus | grep "Current mode" | grep -qs "enforcing"; then
+									if [[ "$PORT" != '1194' || "$PROTOCOL" = 'tcp' ]]; then
+										semanage port -d -t openvpn_port_t -p $PROTOCOL $PORT
+									fi
+								fi
+							fi
+							[[ "$OS" = 'debian' ]] && {
+								apt-get remove --purge -y openvpn openvpn-blacklist
+								apt-get autoremove openvpn -y
+								apt-get autoremove -y
+							} || {
+								yum remove openvpn -y
+							}
+							rm -rf /etc/openvpn
+							rm -rf /usr/share/doc/openvpn*
+						}
+						echo ""
+						echo -e "\033[1;32mREMOVENDO O OPENVPN!\033[0m"
+						echo ""
+						fun_bar 'rmv_open'
+						echo ""
+						echo -e "\033[1;32mOPENVPN REMOVIDO COM SUCESSO!\033[0m"
+						sleep 2
+						fun_conexao
+					} || {
+						echo ""
+						echo -e "\033[1;31mRetornando...\033[0m"
+						sleep 2
+						fun_conexao
+					}
+					;;
+				3)
+					[[ -d /var/www/html/openvpn ]] && {
+						clear
+						fun_spcr() {
+							apt-get remove apache2 -y
+							apt-get autoremove -y
+							rm -rf /var/www/html/openvpn
+						}
+						function aguarde() {
+							helice() {
+								fun_spcr >/dev/null 2>&1 &
+								tput civis
+								while [ -d /proc/$! ]; do
+									for i in / - \\ \|; do
+										sleep .1
+										echo -ne "\e[1D$i"
+									done
+								done
+								tput cnorm
+							}
+							echo -ne "\033[1;31mDESATIVANDO\033[1;32m.\033[1;33m.\033[1;31m. \033[1;33m"
+							helice
+							echo -e "\e[1DOk"
+						}
+						aguarde
+						sleep 2
+						fun_openvpn
+					} || {
+						clear
+						fun_apchon() {
+							apt-get install apache2 zip -y
+							sed -i "s/Listen 80/Listen 81/g" /etc/apache2/ports.conf
+							service apache2 restart
+							[[ ! -d /var/www/html ]] && {
+								mkdir /var/www/html
+							}
+							[[ ! -d /var/www/html/openvpn ]] && {
+								mkdir /var/www/html/openvpn
+							}
+							touch /var/www/html/openvpn/index.html
+							chmod -R 755 /var/www
+							/etc/init.d/apache2 restart
+						}
+						function aguarde2() {
+							helice() {
+								fun_apchon >/dev/null 2>&1 &
+								tput civis
+								while [ -d /proc/$! ]; do
+									for i in / - \\ \|; do
+										sleep .1
+										echo -ne "\e[1D$i"
+									done
+								done
+								tput cnorm
+							}
+							echo -ne "\033[1;32mATIVANDO\033[1;32m.\033[1;33m.\033[1;31m. \033[1;33m"
+							helice
+							echo -e "\e[1DOk"
+						}
+						aguarde2
+						fun_openvpn
+					}
+					;;
+				4)
+					if grep "duplicate-cn" /etc/openvpn/server.conf >/dev/null; then
+						clear
+						fun_multon() {
+							sed -i '/duplicate-cn/d' /etc/openvpn/server.conf
+							sleep 1.5s
+							service openvpn restart >/dev/null
+							sleep 2
+						}
+						fun_spinmult() {
+							helice() {
+								fun_multon >/dev/null 2>&1 &
+								tput civis
+								while [ -d /proc/$! ]; do
+									for i in / - \\ \|; do
+										sleep .1
+										echo -ne "\e[1D$i"
+									done
+								done
+								tput cnorm
+							}
+							echo ""
+							echo -ne "\033[1;31mBLOQUEANDO MULTILOGIN\033[1;32m.\033[1;33m.\033[1;31m. \033[1;33m"
+							helice
+							echo -e "\e[1DOk"
+						}
+						fun_spinmult
+						sleep 1
+						fun_openvpn
+					else
+						clear
+						fun_multoff() {
+							grep -v "^duplicate-cn" /etc/openvpn/server.conf >/tmp/tmpass && mv /tmp/tmpass /etc/openvpn/server.conf
+							echo "duplicate-cn" >>/etc/openvpn/server.conf
+							sleep 1.5s
+							service openvpn restart >/dev/null
+						}
+						fun_spinmult2() {
+							helice() {
+								fun_multoff >/dev/null 2>&1 &
+								tput civis
+								while [ -d /proc/$! ]; do
+									for i in / - \\ \|; do
+										sleep .1
+										echo -ne "\e[1D$i"
+									done
+								done
+								tput cnorm
+							}
+							echo ""
+							echo -ne "\033[1;32mPERMITINDO MULTILOGIN\033[1;32m.\033[1;33m.\033[1;31m. \033[1;33m"
+							helice
+							echo -e "\e[1DOk"
+						}
+						fun_spinmult2
+						sleep 1
+						fun_openvpn
+					fi
+					;;
+				5)
+					clear
+					echo -e "\E[44;1;37m         ALTERAR HOST DNS           \E[0m"
+					echo ""
+					echo -e "\033[1;31m[\033[1;36m1\033[1;31m] \033[1;37m• \033[1;33mADICIONAR HOST DNS"
+					echo -e "\033[1;31m[\033[1;36m2\033[1;31m] \033[1;37m• \033[1;33mREMOVER HOST DNS"
+					echo -e "\033[1;31m[\033[1;36m3\033[1;31m] \033[1;37m• \033[1;33mEDITAR MANUALMENTE"
+					echo -e "\033[1;31m[\033[1;36m0\033[1;31m] \033[1;37m• \033[1;33mVOLTAR"
+					echo ""
+					echo -ne "\033[1;32mOQUE DESEJA FAZER \033[1;33m?\033[1;31m?\033[1;37m "
+					read resp
+					[[ -z "$resp" ]] && {
+						echo ""
+						echo -e "\033[1;31mOpcao invalida!"
+						sleep 3
+						fun_openvpn
+					}
+					if [[ "$resp" = '1' ]]; then
+						clear
+						echo -e "\E[44;1;37m            Adicionar Host DNS            \E[0m"
+						echo ""
+						echo -e "\033[1;33mLista dos hosts atuais:\033[0m "
+						echo ""
+						i=0
+						for _host in $(grep -w "127.0.0.1" /etc/hosts | grep -v "localhost" | cut -d' ' -f2); do
+							echo -e "\033[1;32m$_host"
+						done
+						echo ""
+						echo -ne "\033[1;33mDigite o host a ser adicionado\033[1;37m : "
+						read host
+						if [[ -z $host ]]; then
+							echo ""
+							echo -e "\E[41;1;37m        Campo Vazio ou invalido !       \E[0m"
+							sleep 2
+							fun_openvpn
+						fi
+						if [[ "$(grep -w "$host" /etc/hosts | wc -l)" -gt "0" ]]; then
+							echo -e "\E[41;1;37m    Esse host ja está adicionado  !    \E[0m"
+							sleep 2
+							fun_openvpn
+						fi
+						sed -i "3i\127.0.0.1 $host" /etc/hosts
+						echo ""
+						echo -e "\E[44;1;37m      Host adicionado com sucesso !      \E[0m"
+						sleep 2
+						fun_openvpn
+					elif [[ "$resp" = '2' ]]; then
+						clear
+						echo -e "\E[44;1;37m            Remover Host DNS            \E[0m"
+						echo ""
+						echo -e "\033[1;33mLista dos hosts atuais:\033[0m "
+						echo ""
+						i=0
+						for _host in $(grep -w "127.0.0.1" /etc/hosts | grep -v "localhost" | cut -d' ' -f2); do
+							i=$(expr $i + 1)
+							oP+=$i
+							[[ $i == [1-9] ]] && oP+=" 0$i" && i=0$i
+							oP+=":$_host\n"
+							echo -e "\033[1;33m[\033[1;31m$i\033[1;33m] \033[1;37m- \033[1;32m$_host\033[0m"
+						done
+						echo ""
+						echo -ne "\033[1;32mSelecione o host a ser removido \033[1;33m[\033[1;37m1\033[1;31m-\033[1;37m$i\033[1;33m]\033[1;37m: "
+						read option
+						if [[ -z $option ]]; then
+							echo ""
+							echo -e "\E[41;1;37m          Opcao invalida  !        \E[0m"
+							sleep 2
+							fun_openvpn
+						fi
+						host=$(echo -e "$oP" | grep -E "\b$option\b" | cut -d: -f2)
+						hst=$(grep -v "127.0.0.1 $host" /etc/hosts)
+						echo "$hst" >/etc/hosts
+						echo ""
+						echo -e "\E[41;1;37m      Host removido com sucesso !      \E[0m"
+						sleep 2
+						fun_openvpn
+					elif [[ "$resp" = '3' ]]; then
+						echo -e "\n\033[1;32mALTERANDO ARQUIVO \033[1;37m/etc/hosts\033[0m"
+						echo -e "\n\033[1;31mATENCAO!\033[0m"
+						echo -e "\n\033[1;33mPARA SALVAR USE AS TECLAS \033[1;32mctrl x y\033[0m"
+						sleep 4
+						clear
+						nano /etc/hosts
+						echo -e "\n\033[1;32mALTERADO COM SUCESSO!\033[0m"
+						sleep 3
+						fun_openvpn
+					elif [[ "$resp" = '0' ]]; then
+						echo ""
+						echo -e "\033[1;31mRetornando...\033[0m"
+						sleep 2
+						fun_conexao
+					else
+						echo ""
+						echo -e "\033[1;31mOpcao invalida !\033[0m"
+						sleep 2
+						fun_openvpn
+					fi
+					;;
+				0)
+					fun_conexao
+					;;
+				*)
 					echo ""
 					echo -e "\033[1;31mOpcao invalida !\033[0m"
 					sleep 2
 					fun_openvpn
-				fi
-				;;
-			0)
-				fun_conexao
-				;;
-			*)
-				echo ""
-				echo -e "\033[1;31mOpcao invalida !\033[0m"
-				sleep 2
-				fun_openvpn
-				;;
-			esac
-		done
-	} || {
-		clear
-		echo -e "\E[44;1;37m              INSTALADOR OPENVPN               \E[0m"
-		echo ""
-		echo -e "\033[1;33mRESPONDA AS QUESTOES PARA INICIAR A INSTALACAO"
-		echo ""
-		echo -ne "\033[1;32mPARA CONTINUAR CONFIRME SEU IP: \033[1;37m"
-		read -e -i $IP IP
-		[[ -z "$IP" ]] && {
-			echo ""
-			echo -e "\033[1;31mIP invalido!"
-			sleep 3
-			fun_conexao
-		}
-		echo ""
-		read -p "$(echo -e "\033[1;32mQUAL PORTA DESEJA UTILIZAR? \033[1;37m")" -e -i 1194 porta
-		[[ -z "$porta" ]] && {
-			echo ""
-			echo -e "\033[1;31mPorta invalida!"
-			sleep 2
-			fun_conexao
-		}
-		echo ""
-		echo -e "\033[1;33mVERIFICANDO PORTA..."
-		verif_ptrs $porta
-		echo ""
-		echo -e "\033[1;31m[\033[1;36m1\033[1;31m] \033[1;33mSistema"
-		echo -e "\033[1;31m[\033[1;36m2\033[1;31m] \033[1;33mGoogle (\033[1;32mRecomendado\033[1;33m)"
-		echo -e "\033[1;31m[\033[1;36m3\033[1;31m] \033[1;33mOpenDNS"
-		echo -e "\033[1;31m[\033[1;36m4\033[1;31m] \033[1;33mCloudflare"
-		echo -e "\033[1;31m[\033[1;36m5\033[1;31m] \033[1;33mHurricane Electric"
-		echo -e "\033[1;31m[\033[1;36m6\033[1;31m] \033[1;33mVerisign"
-		echo -e "\033[1;31m[\033[1;36m7\033[1;31m] \033[1;33mDNS Performace\033[0m"
-		echo ""
-		read -p "$(echo -e "\033[1;32mQUAL DNS DESEJA UTILIZAR? \033[1;37m")" -e -i 2 DNS
-		echo ""
-		echo -e "\033[1;31m[\033[1;36m1\033[1;31m] \033[1;33mUDP"
-		echo -e "\033[1;31m[\033[1;36m2\033[1;31m] \033[1;33mTCP (\033[1;32mRecomendado\033[1;33m)"
-		echo ""
-		read -p "$(echo -e "\033[1;32mQUAL PROTOCOLO DESEJA UTILIZAR NO OPENVPN? \033[1;37m")" -e -i 2 resp
-		if [[ "$resp" = '1' ]]; then
-			PROTOCOL=udp
-		elif [[ "$resp" = '2' ]]; then
-			PROTOCOL=tcp
-		else
-			PROTOCOL=tcp
-		fi
-		echo ""
-		[[ "$OS" = 'debian' ]] && {
-			echo -e "\033[1;32mATUALIZANDO O SISTEMA"
-			echo ""
-			fun_attos() {
-				apt-get update -y
-			}
-			fun_bar 'fun_attos'
-			echo ""
-			echo -e "\033[1;32mINSTALANDO DEPENDENCIAS"
-			echo ""
-			fun_instdep() {
-				apt-get install openvpn iptables openssl ca-certificates easy-rsa -y
-				apt-get install zip iptables-persistent -y
-			}
-			fun_bar 'fun_instdep'
+					;;
+				esac
+			done
 		} || {
-			fun_bar 'yum install epel-release -y'
-			fun_bar 'yum install openvpn iptables openssl wget ca-certificates -y'
-		}
-		[[ -d /etc/openvpn/easy-rsa/ ]] && {
-			rm -rf /etc/openvpn/easy-rsa/
-		}
-		# Configurando easy-rsa
-		echo ""
-		PUBLIC_INTERFACE=$(ip route list default | awk '{print $5}')
-		fun_dep() {
-			# Copiar easy-rsa do sistema
-			make-cadir /etc/openvpn/easy-rsa
-			cd /etc/openvpn/easy-rsa/
-			# Configurar vars para Ubuntu 22.04
-			cat >vars <<EOF
-set_var EASYRSA_REQ_COUNTRY    "BR"
-set_var EASYRSA_REQ_PROVINCE   "SP"
-set_var EASYRSA_REQ_CITY       "SaoPaulo"
-set_var EASYRSA_REQ_ORG        "SSHPLUS"
-set_var EASYRSA_REQ_EMAIL      "admin@sshplus.com"
-set_var EASYRSA_REQ_OU         "SSHPLUS"
-set_var EASYRSA_KEY_SIZE       2048
-set_var EASYRSA_ALGO           rsa
-set_var EASYRSA_CA_EXPIRE      3650
-set_var EASYRSA_CERT_EXPIRE    3650
-set_var EASYRSA_DIGEST         "sha256"
-EOF
-			./easyrsa init-pki
-			./easyrsa --batch build-ca nopass
-			./easyrsa gen-dh
-			./easyrsa build-server-full server nopass
-			./easyrsa build-client-full SSHPLUS nopass
-			./easyrsa gen-crl
-			cp pki/ca.crt pki/private/ca.key pki/dh.pem pki/issued/server.crt pki/private/server.key /etc/openvpn/easy-rsa/pki/crl.pem /etc/openvpn
-			chown nobody:$GROUPNAME /etc/openvpn/crl.pem
-			openvpn --genkey --secret /etc/openvpn/ta.key
-			# Generando server.conf
-			echo "port $porta
+			clear
+			echo -e "\E[44;1;37m              INSTALADOR OPENVPN               \E[0m"
+			echo ""
+			echo -e "\033[1;33mRESPONDA AS QUESTOES PARA INICIAR A INSTALACAO"
+			echo ""
+			echo -ne "\033[1;32mPARA CONTINUAR CONFIRME SEU IP: \033[1;37m"
+			read -e -i $IP IP
+			[[ -z "$IP" ]] && {
+				echo ""
+				echo -e "\033[1;31mIP invalido!"
+				sleep 3
+				fun_conexao
+			}
+			echo ""
+			read -p "$(echo -e "\033[1;32mQUAL PORTA DESEJA UTILIZAR? \033[1;37m")" -e -i 1194 porta
+			[[ -z "$porta" ]] && {
+				echo ""
+				echo -e "\033[1;31mPorta invalida!"
+				sleep 2
+				fun_conexao
+			}
+			echo ""
+			echo -e "\033[1;33mVERIFICANDO PORTA..."
+			verif_ptrs $porta
+			echo ""
+			echo -e "\033[1;31m[\033[1;36m1\033[1;31m] \033[1;33mSistema"
+			echo -e "\033[1;31m[\033[1;36m2\033[1;31m] \033[1;33mGoogle (\033[1;32mRecomendado\033[1;33m)"
+			echo -e "\033[1;31m[\033[1;36m3\033[1;31m] \033[1;33mOpenDNS"
+			echo -e "\033[1;31m[\033[1;36m4\033[1;31m] \033[1;33mCloudflare"
+			echo -e "\033[1;31m[\033[1;36m5\033[1;31m] \033[1;33mHurricane Electric"
+			echo -e "\033[1;31m[\033[1;36m6\033[1;31m] \033[1;33mVerisign"
+			echo -e "\033[1;31m[\033[1;36m7\033[1;31m] \033[1;33mDNS Performace\033[0m"
+			echo ""
+			read -p "$(echo -e "\033[1;32mQUAL DNS DESEJA UTILIZAR? \033[1;37m")" -e -i 2 DNS
+			echo ""
+			echo -e "\033[1;31m[\033[1;36m1\033[1;31m] \033[1;33mUDP"
+			echo -e "\033[1;31m[\033[1;36m2\033[1;31m] \033[1;33mTCP (\033[1;32mRecomendado\033[1;33m)"
+			echo ""
+			read -p "$(echo -e "\033[1;32mQUAL PROTOCOLO DESEJA UTILIZAR NO OPENVPN? \033[1;37m")" -e -i 2 resp
+			if [[ "$resp" = '1' ]]; then
+				PROTOCOL=udp
+			elif [[ "$resp" = '2' ]]; then
+				PROTOCOL=tcp
+			else
+				PROTOCOL=tcp
+			fi
+			echo ""
+			[[ "$OS" = 'debian' ]] && {
+				echo -e "\033[1;32mATUALIZANDO O SISTEMA"
+				echo ""
+				fun_attos() {
+					apt-get update-y
+				}
+				fun_bar 'fun_attos'
+				echo ""
+				echo -e "\033[1;32mINSTALANDO DEPENDENCIAS"
+				echo ""
+				fun_instdep() {
+					apt-get install openvpn iptables openssl ca-certificates -y
+					apt-get install zip -y
+				}
+				fun_bar 'fun_instdep'
+			} || {
+				fun_bar 'yum install epel-release -y'
+				fun_bar 'yum install openvpn iptables openssl wget ca-certificates -y'
+			}
+			[[ -d /etc/openvpn/easy-rsa/ ]] && {
+				rm -rf /etc/openvpn/easy-rsa/
+			}
+			# Adquirindo easy-rsa
+			echo ""
+			fun_dep() {
+				wget -O ~/EasyRSA-3.0.1.tgz "https://github.com/kiritosshxd/SSHPLUS/raw/main/Install/EasyRSA-3.0.1.tgz"
+				[[ ! -e $HOME/EasyRSA-3.0.1.tgz ]] && {
+					wget -O ~/EasyRSA-3.0.1.tgz "https://github.com/kiritosshxd/SSHPLUS/raw/main/Install/EasyRSA-3.0.1.tgz"
+				}
+				tar xzf ~/EasyRSA-3.0.1.tgz -C ~/
+				mv ~/EasyRSA-3.0.1/ /etc/openvpn/
+				mv /etc/openvpn/EasyRSA-3.0.1/ /etc/openvpn/easy-rsa/
+				chown -R root:root /etc/openvpn/easy-rsa/
+				rm -rf ~/EasyRSA-3.0.1.tgz
+				cd /etc/openvpn/easy-rsa/
+				./easyrsa init-pki
+				./easyrsa --batch build-ca nopass
+				./easyrsa gen-dh
+				./easyrsa build-server-full server nopass
+				./easyrsa build-client-full SSHPLUS nopass
+				./easyrsa gen-crl
+				cp pki/ca.crt pki/private/ca.key pki/dh.pem pki/issued/server.crt pki/private/server.key /etc/openvpn/easy-rsa/pki/crl.pem /etc/openvpn
+				chown nobody:$GROUPNAME /etc/openvpn/crl.pem
+				openvpn --genkey --secret /etc/openvpn/ta.key
+				# Generando server.conf
+				echo "port $porta
 proto $PROTOCOL
 dev tun
 sndbuf 0
@@ -1346,45 +1333,43 @@ tls-auth ta.key 0
 topology subnet
 server 10.8.0.0 255.255.255.0
 ifconfig-pool-persist ipp.txt" >/etc/openvpn/server.conf
-			echo 'push "redirect-gateway def1 bypass-dhcp"' >>/etc/openvpn/server.conf
-			# DNS
-			case $DNS in
-			1)
-				# Obtain the resolvers from resolv.conf and use them for OpenVPN
-				grep -v '#' /etc/resolv.conf | grep 'nameserver' | grep -E -o '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | while read line; do
-					echo "push \"dhcp-option DNS $line\"" >>/etc/openvpn/server.conf
-				done
-				;;
-			2)
-				echo 'push "dhcp-option DNS 8.8.8.8"' >>/etc/openvpn/server.conf
-				echo 'push "dhcp-option DNS 8.8.4.4"' >>/etc/openvpn/server.conf
-				;;
-			3)
-				echo 'push "dhcp-option DNS 208.67.222.222"' >>/etc/openvpn/server.conf
-				echo 'push "dhcp-option DNS 208.67.220.220"' >>/etc/openvpn/server.conf
-				;;
-			4)
-				echo 'push "dhcp-option DNS 1.1.1.1"' >>/etc/openvpn/server.conf
-				echo 'push "dhcp-option DNS 1.0.0.1"' >>/etc/openvpn/server.conf
-				;;
-			5)
-				echo 'push "dhcp-option DNS 74.82.42.42"' >>/etc/openvpn/server.conf
-				;;
-			6)
-				echo 'push "dhcp-option DNS 64.6.64.6"' >>/etc/openvpn/server.conf
-				echo 'push "dhcp-option DNS 64.6.65.6"' >>/etc/openvpn/server.conf
-				;;
-			7)
-				echo 'push "dhcp-option DNS 189.38.95.95"' >>/etc/openvpn/server.conf
-				echo 'push "dhcp-option DNS 216.146.36.36"' >>/etc/openvpn/server.conf
-				;;
-			esac
-			echo "keepalive 10 120
+				echo 'push "redirect-gateway def1 bypass-dhcp"' >>/etc/openvpn/server.conf
+				# DNS
+				case $DNS in
+				1)
+					# Obtain the resolvers from resolv.conf and use them for OpenVPN
+					grep -v '#' /etc/resolv.conf | grep 'nameserver' | grep -E -o '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | while read line; do
+						echo "push \"dhcp-option DNS $line\"" >>/etc/openvpn/server.conf
+					done
+					;;
+				2)
+					echo 'push "dhcp-option DNS 8.8.8.8"' >>/etc/openvpn/server.conf
+					echo 'push "dhcp-option DNS 8.8.4.4"' >>/etc/openvpn/server.conf
+					;;
+				3)
+					echo 'push "dhcp-option DNS 208.67.222.222"' >>/etc/openvpn/server.conf
+					echo 'push "dhcp-option DNS 208.67.220.220"' >>/etc/openvpn/server.conf
+					;;
+				4)
+					echo 'push "dhcp-option DNS 1.1.1.1"' >>/etc/openvpn/server.conf
+					echo 'push "dhcp-option DNS 1.0.0.1"' >>/etc/openvpn/server.conf
+					;;
+				5)
+					echo 'push "dhcp-option DNS 74.82.42.42"' >>/etc/openvpn/server.conf
+					;;
+				6)
+					echo 'push "dhcp-option DNS 64.6.64.6"' >>/etc/openvpn/server.conf
+					echo 'push "dhcp-option DNS 64.6.65.6"' >>/etc/openvpn/server.conf
+					;;
+				7)
+					echo 'push "dhcp-option DNS 189.38.95.95"' >>/etc/openvpn/server.conf
+					echo 'push "dhcp-option DNS 216.146.36.36"' >>/etc/openvpn/server.conf
+					;;
+				esac
+				echo "keepalive 10 120
 float
-data-ciphers AES-256-GCM:AES-128-GCM:AES-256-CBC
-data-ciphers-fallback AES-256-CBC
-auth SHA256
-tls-version-min 1.2
+cipher AES-256-CBC
+comp-lzo yes
 user nobody
 group $GROUPNAME
 persist-key
@@ -1396,120 +1381,111 @@ crl-verify crl.pem
 client-to-client
 client-cert-not-required
 username-as-common-name
-plugin /usr/lib/x86_64-linux-gnu/openvpn/plugins/openvpn-plugin-auth-pam.so login
+plugin $(find /usr -type f -name 'openvpn-plugin-auth-pam.so') login
 duplicate-cn" >>/etc/openvpn/server.conf
-			sed -i '/\<net.ipv4.ip_forward\>/c\net.ipv4.ip_forward=1' /etc/sysctl.conf
-			if ! grep -q "\<net.ipv4.ip_forward\>" /etc/sysctl.conf; then
-				echo 'net.ipv4.ip_forward=1' >>/etc/sysctl.conf
-			fi
-			echo 1 >/proc/sys/net/ipv4/ip_forward
-			if [[ "$OS" = 'debian' && ! -e $RCLOCAL ]]; then
-				echo '#!/bin/sh -e
+				sed -i '/\<net.ipv4.ip_forward\>/c\net.ipv4.ip_forward=1' /etc/sysctl.conf
+				if ! grep -q "\<net.ipv4.ip_forward\>" /etc/sysctl.conf; then
+					echo 'net.ipv4.ip_forward=1' >>/etc/sysctl.conf
+				fi
+				echo 1 >/proc/sys/net/ipv4/ip_forward
+				if [[ "$OS" = 'debian' && ! -e $RCLOCAL ]]; then
+					echo '#!/bin/sh -e
 exit 0' >$RCLOCAL
-			fi
-			chmod +x $RCLOCAL
-			iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o $PUBLIC_INTERFACE -j SNAT --to $IP
-			sed -i "1 a\iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o $PUBLIC_INTERFACE -j SNAT --to $IP" $RCLOCAL
-			if pgrep firewalld; then
-				firewall-cmd --zone=public --add-port=$porta/$PROTOCOL
-				firewall-cmd --zone=trusted --add-source=10.8.0.0/24
-				firewall-cmd --permanent --zone=public --add-port=$porta/$PROTOCOL
-				firewall-cmd --permanent --zone=trusted --add-source=10.8.0.0/24
-			fi
-			if iptables -L -n | grep -qE 'REJECT|DROP'; then
-				iptables -I INPUT -p $PROTOCOL --dport $porta -j ACCEPT
-				iptables -I FORWARD -s 10.8.0.0/24 -j ACCEPT
-				iptables -F
-				iptables -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
-				sed -i "1 a\iptables -I INPUT -p $PROTOCOL --dport $porta -j ACCEPT" $RCLOCAL
-				sed -i "1 a\iptables -I FORWARD -s 10.8.0.0/24 -j ACCEPT" $RCLOCAL
-				sed -i "1 a\iptables -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT" $RCLOCAL
-			fi
-			# Salvar regras iptables permanentemente
-			if command -v netfilter-persistent >/dev/null 2>&1; then
-				netfilter-persistent save
-			fi
-			if hash sestatus 2>/dev/null; then
-				if sestatus | grep "Current mode" | grep -qs "enforcing"; then
-					if [[ "$porta" != '1194' || "$PROTOCOL" = 'tcp' ]]; then
-						if ! hash semanage 2>/dev/null; then
-							yum install policycoreutils-python -y
+				fi
+				chmod +x $RCLOCAL
+				iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -j SNAT --to $IP
+				sed -i "1 a\iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -j SNAT --to $IP" $RCLOCAL
+				if pgrep firewalld; then
+					firewall-cmd --zone=public --add-port=$porta/$PROTOCOL
+					firewall-cmd --zone=trusted --add-source=10.8.0.0/24
+					firewall-cmd --permanent --zone=public --add-port=$porta/$PROTOCOL
+					firewall-cmd --permanent --zone=trusted --add-source=10.8.0.0/24
+				fi
+				if iptables -L -n | grep -qE 'REJECT|DROP'; then
+					iptables -I INPUT -p $PROTOCOL --dport $porta -j ACCEPT
+					iptables -I FORWARD -s 10.8.0.0/24 -j ACCEPT
+					iptables -F
+					iptables -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+					sed -i "1 a\iptables -I INPUT -p $PROTOCOL --dport $porta -j ACCEPT" $RCLOCAL
+					sed -i "1 a\iptables -I FORWARD -s 10.8.0.0/24 -j ACCEPT" $RCLOCAL
+					sed -i "1 a\iptables -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT" $RCLOCAL
+				fi
+				if hash sestatus 2>/dev/null; then
+					if sestatus | grep "Current mode" | grep -qs "enforcing"; then
+						if [[ "$porta" != '1194' || "$PROTOCOL" = 'tcp' ]]; then
+							if ! hash semanage 2>/dev/null; then
+								yum install policycoreutils-python -y
+							fi
+							semanage port -a -t openvpn_port_t -p $PROTOCOL $porta
 						fi
-						semanage port -a -t openvpn_port_t -p $PROTOCOL $porta
 					fi
 				fi
-			fi
-		}
-		echo -e "\033[1;32mINSTALANDO O OPENVPN  \033[1;31m(\033[1;33mPODE DEMORAR!\033[1;31m)"
-		echo ""
-		fun_bar 'fun_dep > /dev/null 2>&1'
-		fun_ropen() {
-			[[ "$OS" = 'debian' ]] && {
-				if pgrep systemd-journal; then
-					systemctl restart openvpn-server@server.service
-					systemctl enable openvpn-server@server.service
-				else
-					/etc/init.d/openvpn restart
-				fi
-			} || {
-				if pgrep systemd-journal; then
-					systemctl restart openvpn-server@server.service
-					systemctl enable openvpn-server@server.service
-				else
-					service openvpn restart
-					chkconfig openvpn on
-				fi
 			}
+			echo -e "\033[1;32mINSTALANDO O OPENVPN  \033[1;31m(\033[1;33mPODE DEMORAR!\033[1;31m)"
+			echo ""
+			fun_bar 'fun_dep > /dev/null 2>&1'
+			fun_ropen() {
+				[[ "$OS" = 'debian' ]] && {
+					if pgrep systemd-journal; then
+						systemctl restart openvpn@server.service
+					else
+						/etc/init.d/openvpn restart
+					fi
+				} || {
+					if pgrep systemd-journal; then
+						systemctl restart openvpn@server.service
+						systemctl enable openvpn@server.service
+					else
+						service openvpn restart
+						chkconfig openvpn on
+					fi
+				}
+			}
+			echo ""
+			echo -e "\033[1;32mREINICIANDO O OPENVPN"
+			echo ""
+			fun_bar 'fun_ropen'
+			IP2=$(wget -4qO- "http://whatismyip.akamai.com/")
+			if [[ "$IP" != "$IP2" ]]; then
+				IP="$IP2"
+			fi
+			[[ $(grep -wc 'open.py' /etc/autostart) != '0' ]] && pt_proxy=$(grep -w 'open.py' /etc/autostart | cut -d' ' -f6) || pt_proxy=80
+			cat <<-EOF >/etc/openvpn/client-common.txt
+				client
+				dev tun
+				proto $PROTOCOL
+				sndbuf 0
+				rcvbuf 0
+				remote 127.0.0.1 $porta
+				resolv-retry 5
+				nobind
+				persist-key
+				persist-tun
+				remote-cert-tls server
+				cipher AES-256-CBC
+				comp-lzo yes
+				setenv opt block-outside-dns
+				key-direction 1
+				verb 3
+				auth-user-pass
+				keepalive 10 120
+				float
+			EOF
+			# gerar client.ovpn
+			newclient "SSHPLUS"
+			[[ "$(netstat -nplt | grep -wc 'openvpn')" != '0' ]] && echo -e "\n\033[1;32mOPENVPN INSTALADO COM SUCESSO\033[0m" || echo -e "\n\033[1;31mERRO ! A INSTALACAO CORROMPEU\033[0m"
 		}
-		echo ""
-		echo -e "\033[1;32mREINICIANDO O OPENVPN"
-		echo ""
-		fun_bar 'fun_ropen'
-		IP2=$(wget -4qO- "http://whatismyip.akamai.com/")
-		if [[ "$IP" != "$IP2" ]]; then
-			IP="$IP2"
-		fi
-		[[ $(grep -wc 'open.py' /etc/autostart) != '0' ]] && pt_proxy=$(grep -w 'open.py' /etc/autostart | cut -d' ' -f6) || pt_proxy=80
-		cat <<-EOF >/etc/openvpn/client-common.txt
-			client
-			dev tun
-			proto $PROTOCOL
-			sndbuf 0
-			rcvbuf 0
-			remote 127.0.0.1 $porta
-			resolv-retry 5
-			nobind
-			persist-key
-			persist-tun
-			remote-cert-tls server
-			data-ciphers AES-256-GCM:AES-128-GCM:AES-256-CBC
-			data-ciphers-fallback AES-256-CBC
-			auth SHA256
-			key-direction 1
-			verb 3
-			auth-user-pass
-			keepalive 10 120
-			float
-		EOF
-		# gerar client.ovpn
-		newclient "SSHPLUS"
-		[[ "$(netstat -nplt | grep -wc 'openvpn')" != '0' ]] && echo -e "\n\033[1;32mOPENVPN INSTALADO COM SUCESSO\033[0m" || echo -e "\n\033[1;31mERRO ! A INSTALACAO CORROMPEU\033[0m"
+		sed -i '$ i\echo 1 > /proc/sys/net/ipv4/ip_forward' /etc/rc.local
+		sed -i '$ i\echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6' /etc/rc.local
+		sed -i '$ i\iptables -A INPUT -p tcp --dport 25 -j DROP' /etc/rc.local
+		sed -i '$ i\iptables -A INPUT -p tcp --dport 110 -j DROP' /etc/rc.local
+		sed -i '$ i\iptables -A OUTPUT -p tcp --dport 25 -j DROP' /etc/rc.local
+		sed -i '$ i\iptables -A OUTPUT -p tcp --dport 110 -j DROP' /etc/rc.local
+		sed -i '$ i\iptables -A FORWARD -p tcp --dport 25 -j DROP' /etc/rc.local
+		sed -i '$ i\iptables -A FORWARD -p tcp --dport 110 -j DROP' /etc/rc.local
+		sleep 3
+		fun_conexao
 	}
-	sed -i '$ i\echo 1 > /proc/sys/net/ipv4/ip_forward' /etc/rc.local
-	sed -i '$ i\echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6' /etc/rc.local
-	sed -i '$ i\iptables -A INPUT -p tcp --dport 25 -j DROP' /etc/rc.local
-	sed -i '$ i\iptables -A INPUT -p tcp --dport 110 -j DROP' /etc/rc.local
-	sed -i '$ i\iptables -A OUTPUT -p tcp --dport 25 -j DROP' /etc/rc.local
-	sed -i '$ i\iptables -A OUTPUT -p tcp --dport 110 -j DROP' /etc/rc.local
-	sed -i '$ i\iptables -A FORWARD -p tcp --dport 25 -j DROP' /etc/rc.local
-	sed -i '$ i\iptables -A FORWARD -p tcp --dport 110 -j DROP' /etc/rc.local
-	sleep 3
-	fun_conexao
-}
-
-
-
-
 
 	fun_socks() {
 		clear
